@@ -1,17 +1,18 @@
-// viewer.js — EPLAN-like PDF viewer with red/greenlining, inline text notes, share-link, and local autosave.
+// viewer.js — EPLAN-like PDF viewer with red/greenlining, inline text notes, share-link, local autosave, and mobile sidebar.
 // Requirements in index.html:
 //  - pdf.js v3 UMD loaded and window.pdfjsLib configured
 //  - LZString loaded from CDN (for share-link compression)
-//  - All controls and canvases present with the IDs used below
+//  - HTML elements with the IDs used below exist
 
 // ---------------- Configuration ----------------
-const PDF_URL  = "./docs/project.pdf";
+const PDF_URL   = "./docs/project.pdf";
 const LOCAL_KEY = "eplan_ann_v2";
 const HASH_KEY  = "ann";
+const SIDEBAR_KEY = "eplan_sidebar_open";
 
 // Drawing settings
-const PEN_RED   = "#ff0000";
-const PEN_GREEN = "#00ff6a";
+const PEN_RED    = "#ff0000";
+const PEN_GREEN  = "#00ff6a";
 const TEXT_COLOR = "#ffcc00";
 const TEXT_FONT  = "16px sans-serif";
 
@@ -31,20 +32,22 @@ const state = {
   sharedMode: false // true when data comes from URL hash
 };
 
-// ---------------- DOM bootstrap ----------------
+// ---------------- Boot ----------------
 document.addEventListener("DOMContentLoaded", bootViewer);
 
 function bootViewer() {
-  const need = [
+  // ---- Collect DOM ----
+  const ids = [
     "pdfCanvas","annCanvas","canvasWrap",
     "zoomIn","zoomOut","zoomVal",
     "prevPage","nextPage","pageInfo",
     "undo","clear","save","load",
-    "exportJson","importJson","shareLink"
+    "exportJson","importJson","shareLink",
+    "sidebar","sidebarToggle","sidebarCollapse"
   ];
   const el = {};
   let missing = [];
-  for (const id of need) {
+  for (const id of ids) {
     el[id] = document.getElementById(id);
     if (!el[id]) missing.push("#" + id);
   }
@@ -63,7 +66,7 @@ function bootViewer() {
   const pdfCtx = el.pdfCanvas.getContext("2d");
   const annCtx = el.annCanvas.getContext("2d");
 
-  // ---------------- Helpers ----------------
+  // ---- Helpers ----
   function pageKey(n = state.page) { return `page:${n}`; }
   function strokesForPage(n = state.page) { return state.strokes[pageKey(n)] || []; }
   function setStrokesForPage(arr, n = state.page) { state.strokes[pageKey(n)] = arr; }
@@ -91,12 +94,12 @@ function bootViewer() {
   const saveLocalThrottled = (() => {
     let t = null;
     return function save() {
-      if (state.sharedMode) return; // do not overwrite shared mode with local
+      if (state.sharedMode) return; // do not overwrite when in shared mode
       if (t) return;
       t = setTimeout(() => {
         try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state.strokes)); } catch (_) {}
         t = null;
-      }, 250);
+      }, 200);
     };
   })();
 
@@ -127,7 +130,7 @@ function bootViewer() {
     return false;
   }
 
-  // ---------------- Rendering ----------------
+  // ---- Rendering ----
   async function renderPage() {
     const page = await state.pdf.getPage(state.page);
     const viewport = page.getViewport({ scale: state.scale });
@@ -170,7 +173,7 @@ function bootViewer() {
     }
   }
 
-  // ---------------- Inline text editor ----------------
+  // ---- Inline text editor ----
   function showTextEditor(x, y) {
     const existing = document.getElementById("textEditor");
     if (existing) existing.remove();
@@ -218,7 +221,7 @@ function bootViewer() {
     editor.addEventListener("blur", commit);
   }
 
-  // ---------------- UI wiring ----------------
+  // ---- UI wiring ----
   el.zoomIn.addEventListener("click", () => {
     state.scale = Math.min(state.scale + 0.1, state.maxScale);
     updateZoomLabel();
@@ -416,8 +419,43 @@ function bootViewer() {
     }
   });
 
-  // ---------------- Boot sequence ----------------
-  (async function boot() {
+  // ---- Collapsible sidebar (mobile friendly) ----
+  const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
+  function setSidebar(open) {
+    if (open) el.sidebar.classList.add("open");
+    else el.sidebar.classList.remove("open");
+    try { localStorage.setItem(SIDEBAR_KEY, open ? "1" : "0"); } catch (_) {}
+  }
+  // Restore state
+  const savedSidebar = (typeof localStorage !== "undefined") ? localStorage.getItem(SIDEBAR_KEY) : null;
+  if (savedSidebar === "1") setSidebar(true);
+  else if (savedSidebar === "0") setSidebar(false);
+  else setSidebar(!isMobile()); // default: open on desktop, closed on mobile
+
+  el.sidebarToggle.addEventListener("click", () => setSidebar(true));
+  el.sidebarCollapse.addEventListener("click", () => setSidebar(false));
+
+  // Optional: edge-swipe to open
+  let touchStartX = null;
+  window.addEventListener("touchstart", (e) => {
+    if (!isMobile()) return;
+    if (el.sidebar.classList.contains("open")) return;
+    if (e.touches && e.touches[0].clientX < 24) {
+      touchStartX = e.touches[0].clientX;
+    }
+  }, { passive: true });
+  window.addEventListener("touchmove", (e) => {
+    if (touchStartX === null) return;
+    const dx = e.touches[0].clientX - touchStartX;
+    if (dx > 40) {
+      setSidebar(true);
+      touchStartX = null;
+    }
+  }, { passive: true });
+  window.addEventListener("touchend", () => { touchStartX = null; });
+
+  // ---- Initialize ----
+  (async function init() {
     const hasShared = applyHashAnnotationsIfAny();
     if (!hasShared) loadLocal();
 
