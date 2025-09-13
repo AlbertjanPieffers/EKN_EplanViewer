@@ -1,12 +1,21 @@
-// PDF.js v3 UMD is loaded globally as window.pdfjsLib from index.html.
-// LZString is loaded globally from CDN (for share-link compression).
+// viewer.js — EPLAN-like PDF viewer with red/greenlining, inline text notes, share-link, and local autosave.
+// Requirements in index.html:
+//  - pdf.js v3 UMD loaded and window.pdfjsLib configured
+//  - LZString loaded from CDN (for share-link compression)
+//  - All controls and canvases present with the IDs used below
 
-// Configuration
-const PDF_URL = "./docs/project.pdf";
-const LOCAL_KEY = "eplan_ann_v2"; // localStorage key
-const HASH_KEY = "ann";           // URL hash key
+// ---------------- Configuration ----------------
+const PDF_URL  = "./docs/project.pdf";
+const LOCAL_KEY = "eplan_ann_v2";
+const HASH_KEY  = "ann";
 
-// State
+// Drawing settings
+const PEN_RED   = "#ff0000";
+const PEN_GREEN = "#00ff6a";
+const TEXT_COLOR = "#ffcc00";
+const TEXT_FONT  = "16px sans-serif";
+
+// ---------------- State ----------------
 const state = {
   pdf: null,
   page: 1,
@@ -14,358 +23,409 @@ const state = {
   minScale: 0.4,
   maxScale: 3.0,
   tool: null, // "pen-red" | "pen-green" | "rect-red" | "rect-green" | "text" | null
-  strokes: {}, // { "page:1": [ {type, color, path|rect|text}, ... ] }
+  strokes: {}, // { "page:1": [ {type, color, path}|{type, color, x,y,w,h}|{type, color, x,y, value} ] }
   drawing: false,
   currentPath: [],
   startPt: null,
   pan: { active: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 },
-  sharedMode: false // true when annotations are driven by URL hash
+  sharedMode: false // true when data comes from URL hash
 };
 
-// Elements
-const pdfCanvas = document.getElementById("pdfCanvas");
-const pdfCtx = pdfCanvas.getContext("2d");
-const annCanvas = document.getElementById("annCanvas");
-const annCtx = annCanvas.getContext("2d");
-const wrap = document.getElementById("canvasWrap");
+// ---------------- DOM bootstrap ----------------
+document.addEventListener("DOMContentLoaded", bootViewer);
 
-const zoomInBtn = document.getElementById("zoomIn");
-const zoomOutBtn = document.getElementById("zoomOut");
-const zoomVal = document.getElementById("zoomVal");
-const prevBtn = document.getElementById("prevPage");
-const nextBtn = document.getElementById("nextPage");
-const pageInfo = document.getElementById("pageInfo");
-
-const toolsEl = document.querySelectorAll("[data-tool]");
-const undoBtn = document.getElementById("undo");
-const clearBtn = document.getElementById("clear");
-const saveBtn = document.getElementById("save");
-const loadBtn = document.getElementById("load");
-const exportJsonBtn = document.getElementById("exportJson");
-const importJsonInput = document.getElementById("importJson");
-const shareBtn = document.getElementById("shareLink");
-
-// ---------- Helpers ----------
-function key() { return `page:${state.page}`; }
-function updateZoomLabel() { zoomVal.textContent = `${Math.round(state.scale * 100)}%`; }
-function strokesForPage() { return state.strokes[key()] || []; }
-function setStrokesForPage(arr) { state.strokes[key()] = arr; }
-function pushStroke(stroke) {
-  const arr = strokesForPage();
-  arr.push(stroke);
-  setStrokesForPage(arr);
-}
-
-// Local persistence (fallback)
-function loadLocal() {
-  try {
-    const raw = localStorage.getItem(LOCAL_KEY);
-    if (raw) state.strokes = JSON.parse(raw) || {};
-  } catch (_) {}
-}
-function saveLocal() {
-  try {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(state.strokes));
-  } catch (_) {}
-}
-
-// URL-hash share (no backend)
-function encodeAnnotationsToHash(obj) {
-  const json = JSON.stringify(obj);
-  const compressed = LZString.compressToEncodedURIComponent(json);
-  return `#${HASH_KEY}=${compressed}`;
-}
-function decodeAnnotationsFromHash() {
-  const m = location.hash.match(new RegExp(`#${HASH_KEY}=([^&]+)`));
-  if (!m) return null;
-  try {
-    const json = LZString.decompressFromEncodedURIComponent(m[1]);
-    if (!json) return null;
-    const data = JSON.parse(json);
-    return data && typeof data === "object" ? data : null;
-  } catch {
-    return null;
+function bootViewer() {
+  const need = [
+    "pdfCanvas","annCanvas","canvasWrap",
+    "zoomIn","zoomOut","zoomVal",
+    "prevPage","nextPage","pageInfo",
+    "undo","clear","save","load",
+    "exportJson","importJson","shareLink"
+  ];
+  const el = {};
+  let missing = [];
+  for (const id of need) {
+    el[id] = document.getElementById(id);
+    if (!el[id]) missing.push("#" + id);
   }
-}
-function applyHashAnnotationsIfAny() {
-  const data = decodeAnnotationsFromHash();
-  if (data) {
-    state.strokes = data;
-    state.sharedMode = true; // indicate we are showing shared data
-    return true;
-  }
-  state.sharedMode = false;
-  return false;
-}
+  el.tools = document.querySelectorAll("[data-tool]");
 
-// Drawing and rendering
-function drawAllAnnotations() {
-  annCtx.clearRect(0, 0, annCanvas.width, annCanvas.height);
-  const arr = strokesForPage();
-  for (const s of arr) {
-    if (s.type === "pen") {
+  if (!window.pdfjsLib) {
+    console.error("pdfjsLib is not available. Check your index.html includes.");
+    return;
+  }
+  if (missing.length) {
+    console.error("Missing DOM elements:", missing.join(", "));
+    return;
+  }
+
+  // Canvas contexts
+  const pdfCtx = el.pdfCanvas.getContext("2d");
+  const annCtx = el.annCanvas.getContext("2d");
+
+  // ---------------- Helpers ----------------
+  function pageKey(n = state.page) { return `page:${n}`; }
+  function strokesForPage(n = state.page) { return state.strokes[pageKey(n)] || []; }
+  function setStrokesForPage(arr, n = state.page) { state.strokes[pageKey(n)] = arr; }
+  function pushStroke(stroke) {
+    const arr = strokesForPage();
+    arr.push(stroke);
+    setStrokesForPage(arr);
+  }
+  function updateZoomLabel() { el.zoomVal.textContent = `${Math.round(state.scale * 100)}%`; }
+
+  function toCanvasPoint(evt) {
+    const rect = el.annCanvas.getBoundingClientRect();
+    const x = (evt.clientX - rect.left) * (el.annCanvas.width / rect.width);
+    const y = (evt.clientY - rect.top)  * (el.annCanvas.height / rect.height);
+    return [x, y];
+  }
+
+  // Local storage
+  function loadLocal() {
+    try {
+      const raw = localStorage.getItem(LOCAL_KEY);
+      if (raw) state.strokes = JSON.parse(raw) || {};
+    } catch (_) {}
+  }
+  const saveLocalThrottled = (() => {
+    let t = null;
+    return function save() {
+      if (state.sharedMode) return; // do not overwrite shared mode with local
+      if (t) return;
+      t = setTimeout(() => {
+        try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state.strokes)); } catch (_) {}
+        t = null;
+      }, 250);
+    };
+  })();
+
+  // Share link (hash)
+  function encodeAnnotationsToHash(obj) {
+    const json = JSON.stringify(obj);
+    const compressed = LZString.compressToEncodedURIComponent(json);
+    return `#${HASH_KEY}=${compressed}`;
+  }
+  function decodeAnnotationsFromHash() {
+    const m = location.hash.match(new RegExp(`#${HASH_KEY}=([^&]+)`));
+    if (!m) return null;
+    try {
+      const json = LZString.decompressFromEncodedURIComponent(m[1]);
+      if (!json) return null;
+      const data = JSON.parse(json);
+      return data && typeof data === "object" ? data : null;
+    } catch { return null; }
+  }
+  function applyHashAnnotationsIfAny() {
+    const data = decodeAnnotationsFromHash();
+    if (data) {
+      state.strokes = data;
+      state.sharedMode = true;
+      return true;
+    }
+    state.sharedMode = false;
+    return false;
+  }
+
+  // ---------------- Rendering ----------------
+  async function renderPage() {
+    const page = await state.pdf.getPage(state.page);
+    const viewport = page.getViewport({ scale: state.scale });
+
+    el.pdfCanvas.width  = Math.floor(viewport.width);
+    el.pdfCanvas.height = Math.floor(viewport.height);
+    el.annCanvas.width  = el.pdfCanvas.width;
+    el.annCanvas.height = el.pdfCanvas.height;
+
+    await page.render({ canvasContext: pdfCtx, viewport }).promise;
+    el.pageInfo.textContent = `${state.page} / ${state.pdf.numPages}`;
+    drawAllAnnotations();
+  }
+
+  function drawAllAnnotations() {
+    annCtx.clearRect(0, 0, el.annCanvas.width, el.annCanvas.height);
+    const arr = strokesForPage();
+    for (const s of arr) {
+      if (s.type === "pen") {
+        annCtx.beginPath();
+        annCtx.lineWidth = 2;
+        annCtx.strokeStyle = s.color;
+        annCtx.lineJoin = "round";
+        annCtx.lineCap = "round";
+        if (!s.path || s.path.length < 2) continue;
+        annCtx.moveTo(s.path[0][0], s.path[0][1]);
+        for (let i = 1; i < s.path.length; i++) {
+          annCtx.lineTo(s.path[i][0], s.path[i][1]);
+        }
+        annCtx.stroke();
+      } else if (s.type === "rect") {
+        annCtx.lineWidth = 2;
+        annCtx.strokeStyle = s.color;
+        annCtx.strokeRect(s.x, s.y, s.w, s.h);
+      } else if (s.type === "text") {
+        annCtx.fillStyle = s.color || TEXT_COLOR;
+        annCtx.font = TEXT_FONT;
+        annCtx.fillText(s.value, s.x, s.y);
+      }
+    }
+  }
+
+  // ---------------- Inline text editor ----------------
+  function showTextEditor(x, y) {
+    const existing = document.getElementById("textEditor");
+    if (existing) existing.remove();
+
+    const editor = document.createElement("input");
+    editor.type = "text";
+    editor.id = "textEditor";
+    editor.placeholder = "Type note, Enter to save";
+    editor.autocomplete = "off";
+
+    // Position editor over the canvas at the clicked coordinate
+    const rect = el.annCanvas.getBoundingClientRect();
+    const scaleX = rect.width / el.annCanvas.width;
+    const scaleY = rect.height / el.annCanvas.height;
+
+    editor.style.position = "absolute";
+    editor.style.left = `${rect.left + x * scaleX}px`;
+    editor.style.top  = `${rect.top  + (y - 6) * scaleY}px`;
+    editor.style.minWidth = "160px";
+    editor.style.padding = "4px 8px";
+    editor.style.borderRadius = "6px";
+    editor.style.border = "1px solid #444";
+    editor.style.background = "#111";
+    editor.style.color = "#f3f3f3";
+    editor.style.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    editor.style.zIndex = "1000";
+
+    document.body.appendChild(editor);
+    editor.focus();
+
+    function commit() {
+      const val = editor.value.trim();
+      editor.remove();
+      if (!val) return;
+      pushStroke({ type: "text", color: TEXT_COLOR, x, y, value: val });
+      drawAllAnnotations();
+      saveLocalThrottled();
+    }
+    function cancel() { editor.remove(); }
+
+    editor.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") commit();
+      if (e.key === "Escape") cancel();
+    });
+    editor.addEventListener("blur", commit);
+  }
+
+  // ---------------- UI wiring ----------------
+  el.zoomIn.addEventListener("click", () => {
+    state.scale = Math.min(state.scale + 0.1, state.maxScale);
+    updateZoomLabel();
+    renderPage();
+  });
+  el.zoomOut.addEventListener("click", () => {
+    state.scale = Math.max(state.scale - 0.1, state.minScale);
+    updateZoomLabel();
+    renderPage();
+  });
+  el.prevPage.addEventListener("click", () => {
+    state.page = Math.max(1, state.page - 1);
+    renderPage();
+  });
+  el.nextPage.addEventListener("click", () => {
+    state.page = Math.min(state.pdf.numPages, state.page + 1);
+    renderPage();
+  });
+  updateZoomLabel();
+
+  el.tools.forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.tool = btn.dataset.tool;
+      el.annCanvas.style.pointerEvents = "auto";
+    });
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      state.tool = null;
+      el.annCanvas.style.pointerEvents = "none";
+    }
+  });
+
+  // Drawing handlers
+  el.annCanvas.addEventListener("pointerdown", (e) => {
+    if (!state.tool) return;
+
+    const [x, y] = toCanvasPoint(e);
+
+    if (state.tool === "text") {
+      showTextEditor(x, y);
+      e.preventDefault();
+      return;
+    }
+
+    state.drawing = true;
+    if (state.tool.startsWith("pen")) {
+      state.currentPath = [[x, y]];
+    } else if (state.tool.startsWith("rect")) {
+      state.startPt = [x, y];
+    }
+    e.preventDefault();
+  });
+
+  el.annCanvas.addEventListener("pointermove", (e) => {
+    if (!state.tool || !state.drawing) return;
+    const [x, y] = toCanvasPoint(e);
+
+    if (state.tool.startsWith("pen")) {
+      const last = state.currentPath[state.currentPath.length - 1];
+      state.currentPath.push([x, y]);
       annCtx.beginPath();
+      annCtx.moveTo(last[0], last[1]);
+      annCtx.lineTo(x, y);
+      annCtx.strokeStyle = state.tool.endsWith("red") ? PEN_RED : PEN_GREEN;
       annCtx.lineWidth = 2;
-      annCtx.strokeStyle = s.color;
       annCtx.lineJoin = "round";
       annCtx.lineCap = "round";
-      const p = s.path;
-      if (!p || p.length < 2) continue;
-      annCtx.moveTo(p[0][0], p[0][1]);
-      for (let i = 1; i < p.length; i++) annCtx.lineTo(p[i][0], p[i][1]);
       annCtx.stroke();
-    } else if (s.type === "rect") {
+    } else if (state.tool.startsWith("rect")) {
+      drawAllAnnotations(); // live preview
+      const [sx, sy] = state.startPt;
+      const w = x - sx;
+      const h = y - sy;
       annCtx.lineWidth = 2;
-      annCtx.strokeStyle = s.color;
-      annCtx.strokeRect(s.x, s.y, s.w, s.h);
-    } else if (s.type === "text") {
-      annCtx.fillStyle = s.color;
-      annCtx.font = "16px sans-serif";
-      annCtx.fillText(s.value, s.x, s.y);
+      annCtx.strokeStyle = state.tool.endsWith("red") ? PEN_RED : PEN_GREEN;
+      annCtx.strokeRect(sx, sy, w, h);
     }
-  }
-}
-function toCanvasPoint(evt) {
-  const rect = annCanvas.getBoundingClientRect();
-  const x = (evt.clientX - rect.left) * (annCanvas.width / rect.width);
-  const y = (evt.clientY - rect.top) * (annCanvas.height / rect.height);
-  return [x, y];
-}
-
-// Rendering
-async function renderPage() {
-  const page = await state.pdf.getPage(state.page);
-  const viewport = page.getViewport({ scale: state.scale });
-
-  pdfCanvas.width = Math.floor(viewport.width);
-  pdfCanvas.height = Math.floor(viewport.height);
-  annCanvas.width = pdfCanvas.width;
-  annCanvas.height = pdfCanvas.height;
-
-  await page.render({ canvasContext: pdfCtx, viewport }).promise;
-  pageInfo.textContent = `${state.page} / ${state.pdf.numPages}`;
-  drawAllAnnotations();
-}
-
-// ---------- UI wiring ----------
-zoomInBtn.addEventListener("click", () => {
-  state.scale = Math.min(state.scale + 0.1, state.maxScale);
-  updateZoomLabel();
-  renderPage();
-});
-zoomOutBtn.addEventListener("click", () => {
-  state.scale = Math.max(state.scale - 0.1, state.minScale);
-  updateZoomLabel();
-  renderPage();
-});
-prevBtn.addEventListener("click", () => {
-  state.page = Math.max(1, state.page - 1);
-  renderPage();
-});
-nextBtn.addEventListener("click", () => {
-  state.page = Math.min(state.pdf.numPages, state.page + 1);
-  renderPage();
-});
-updateZoomLabel();
-
-toolsEl.forEach(btn => {
-  btn.addEventListener("click", () => {
-    state.tool = btn.dataset.tool;
-    annCanvas.style.pointerEvents = "auto";
   });
-});
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    state.tool = null;
-    annCanvas.style.pointerEvents = "none";
-  }
-});
+  el.annCanvas.addEventListener("pointerup", (e) => {
+    if (!state.tool || !state.drawing) return;
+    state.drawing = false;
 
-// Annotation drawing
-annCanvas.addEventListener("pointerdown", (e) => {
-  if (!state.tool) return;
-  state.drawing = true;
-  const [x, y] = toCanvasPoint(e);
-
-  if (state.tool.startsWith("pen")) {
-    state.currentPath = [[x, y]];
-  } else if (state.tool.startsWith("rect")) {
-    state.startPt = [x, y];
-  } else if (state.tool === "text") {
-    const value = prompt("Enter note text:");
-    if (value && value.trim()) {
-      pushStroke({ type: "text", color: "#ffcc00", x, y, value: value.trim() });
-      drawAllAnnotations();
-      if (!state.sharedMode) saveLocal();
+    if (state.tool.startsWith("pen")) {
+      const color = state.tool.endsWith("red") ? PEN_RED : PEN_GREEN;
+      pushStroke({ type: "pen", color, path: state.currentPath });
+      state.currentPath = [];
+    } else if (state.tool.startsWith("rect")) {
+      const [x2, y2] = toCanvasPoint(e);
+      const [sx, sy] = state.startPt;
+      const rect = { x: sx, y: sy, w: x2 - sx, h: y2 - sy };
+      const color = state.tool.endsWith("red") ? PEN_RED : PEN_GREEN;
+      pushStroke({ type: "rect", color, ...rect });
+      state.startPt = null;
     }
-  }
-  e.preventDefault();
-});
-
-annCanvas.addEventListener("pointermove", (e) => {
-  if (!state.tool || !state.drawing) return;
-  const [x, y] = toCanvasPoint(e);
-
-  if (state.tool.startsWith("pen")) {
-    const last = state.currentPath[state.currentPath.length - 1];
-    state.currentPath.push([x, y]);
-    annCtx.beginPath();
-    annCtx.moveTo(last[0], last[1]);
-    annCtx.lineTo(x, y);
-    annCtx.strokeStyle = state.tool.endsWith("red") ? "#ff0000" : "#00ff6a";
-    annCtx.lineWidth = 2;
-    annCtx.lineJoin = "round";
-    annCtx.lineCap = "round";
-    annCtx.stroke();
-  } else if (state.tool.startsWith("rect")) {
-    // Live preview
     drawAllAnnotations();
-    const [sx, sy] = state.startPt;
-    const w = x - sx;
-    const h = y - sy;
-    annCtx.lineWidth = 2;
-    annCtx.strokeStyle = state.tool.endsWith("red") ? "#ff0000" : "#00ff6a";
-    annCtx.strokeRect(sx, sy, w, h);
-  }
-});
+    saveLocalThrottled();
+  });
 
-annCanvas.addEventListener("pointerup", (e) => {
-  if (!state.tool || !state.drawing) return;
-  state.drawing = false;
+  // Pan by dragging the wrapper (scroll the .viewer)
+  el.canvasWrap.addEventListener("mousedown", (e) => {
+    if (state.tool) return; // do not pan while drawing
+    state.pan.active = true;
+    state.pan.startX = e.clientX;
+    state.pan.startY = e.clientY;
+    const scroller = document.querySelector(".viewer");
+    state.pan.scrollLeft = scroller.scrollLeft;
+    state.pan.scrollTop  = scroller.scrollTop;
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!state.pan.active) return;
+    const scroller = document.querySelector(".viewer");
+    scroller.scrollLeft = state.pan.scrollLeft - (e.clientX - state.pan.startX);
+    scroller.scrollTop  = state.pan.scrollTop  - (e.clientY - state.pan.startY);
+  });
+  window.addEventListener("mouseup", () => { state.pan.active = false; });
 
-  if (state.tool.startsWith("pen")) {
-    const color = state.tool.endsWith("red") ? "#ff0000" : "#00ff6a";
-    pushStroke({ type: "pen", color, path: state.currentPath });
-    state.currentPath = [];
-  } else if (state.tool.startsWith("rect")) {
-    const [x2, y2] = toCanvasPoint(e);
-    const [sx, sy] = state.startPt;
-    const rect = { x: sx, y: sy, w: x2 - sx, h: y2 - sy };
-    const color = state.tool.endsWith("red") ? "#ff0000" : "#00ff6a";
-    pushStroke({ type: "rect", color, ...rect });
-    state.startPt = null;
-  }
-  drawAllAnnotations();
-  if (!state.sharedMode) saveLocal();
-});
-
-// Pan by dragging blank area (use wrapper to scroll)
-wrap.addEventListener("mousedown", (e) => {
-  if (state.tool) return; // do not pan while drawing
-  state.pan.active = true;
-  state.pan.startX = e.clientX;
-  state.pan.startY = e.clientY;
-  const scroller = document.querySelector(".viewer");
-  state.pan.scrollLeft = scroller.scrollLeft;
-  state.pan.scrollTop = scroller.scrollTop;
-});
-
-window.addEventListener("mousemove", (e) => {
-  if (!state.pan.active) return;
-  const scroller = document.querySelector(".viewer");
-  scroller.scrollLeft = state.pan.scrollLeft - (e.clientX - state.pan.startX);
-  scroller.scrollTop = state.pan.scrollTop - (e.clientY - state.pan.startY);
-});
-
-window.addEventListener("mouseup", () => { state.pan.active = false; });
-
-// Actions
-undoBtn.addEventListener("click", () => {
-  const arr = strokesForPage();
-  arr.pop();
-  setStrokesForPage(arr);
-  drawAllAnnotations();
-  if (!state.sharedMode) saveLocal();
-});
-
-clearBtn.addEventListener("click", () => {
-  setStrokesForPage([]);
-  drawAllAnnotations();
-  if (!state.sharedMode) saveLocal();
-});
-
-saveBtn.addEventListener("click", () => {
-  if (state.sharedMode) {
-    alert("You are viewing a shared link. Edit and press Share link to create a new shared URL.");
-  } else {
-    saveLocal();
-    alert("Saved locally on this device.");
-  }
-});
-
-loadBtn.addEventListener("click", () => {
-  if (state.sharedMode) {
-    alert("Shared link is already loaded from the URL.");
-  } else {
-    loadLocal();
+  // Actions
+  el.undo.addEventListener("click", () => {
+    const arr = strokesForPage();
+    arr.pop();
+    setStrokesForPage(arr);
     drawAllAnnotations();
-    alert("Loaded local annotations.");
-  }
-});
-
-exportJsonBtn.addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(state.strokes, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "annotations.json";
-  a.click();
-  URL.revokeObjectURL(url);
-});
-
-importJsonInput.addEventListener("change", async () => {
-  const file = importJsonInput.files?.[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    if (data && typeof data === "object") {
-      state.strokes = data;
-      drawAllAnnotations();
-      if (!state.sharedMode) saveLocal();
+    saveLocalThrottled();
+  });
+  el.clear.addEventListener("click", () => {
+    setStrokesForPage([]);
+    drawAllAnnotations();
+    saveLocalThrottled();
+  });
+  el.save.addEventListener("click", () => {
+    if (state.sharedMode) {
+      alert("You are viewing a shared link. Edit and press Share link to create a new shared URL.");
+    } else {
+      try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state.strokes)); } catch (_) {}
+      alert("Saved locally on this device.");
     }
-  } catch (e) {
-    console.error("Invalid JSON:", e);
-  } finally {
-    importJsonInput.value = "";
-  }
-});
+  });
+  el.load.addEventListener("click", () => {
+    if (state.sharedMode) {
+      alert("Shared link is already loaded from the URL.");
+    } else {
+      loadLocal();
+      drawAllAnnotations();
+      alert("Loaded local annotations.");
+    }
+  });
+  el.exportJson.addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state.strokes, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "annotations.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+  el.importJson.addEventListener("change", async () => {
+    const file = el.importJson.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data && typeof data === "object") {
+        state.strokes = data;
+        drawAllAnnotations();
+        saveLocalThrottled();
+      }
+    } catch (e) {
+      console.error("Invalid JSON:", e);
+    } finally {
+      el.importJson.value = "";
+    }
+  });
 
-// Share link
-if (shareBtn) {
-  shareBtn.addEventListener("click", () => {
+  // Share link
+  el.shareLink.addEventListener("click", () => {
     const hash = encodeAnnotationsToHash(state.strokes);
     const url = `${location.origin}${location.pathname}${hash}`;
     navigator.clipboard?.writeText(url).catch(() => {});
     alert("Share this URL:\n\n" + url);
   });
-}
 
-// React to hash changes (e.g., when user pastes a new hash and hits enter)
-window.addEventListener("hashchange", () => {
-  const wasShared = state.sharedMode;
-  if (applyHashAnnotationsIfAny()) {
-    drawAllAnnotations();
-    if (!wasShared) {
-      alert("Loaded shared annotations from URL.");
+  // React to hash changes
+  window.addEventListener("hashchange", () => {
+    const wasShared = state.sharedMode;
+    if (applyHashAnnotationsIfAny()) {
+      drawAllAnnotations();
+      if (!wasShared) alert("Loaded shared annotations from URL.");
+    } else if (wasShared) {
+      loadLocal();
+      state.sharedMode = false;
+      drawAllAnnotations();
     }
-  } else if (wasShared) {
-    // If hash cleared, fall back to local
-    loadLocal();
-    state.sharedMode = false;
-    drawAllAnnotations();
-  }
-});
+  });
 
-// Boot
-(async function boot() {
-  // Prefer shared link if present
-  const hasShared = applyHashAnnotationsIfAny();
-  if (!hasShared) loadLocal();
+  // ---------------- Boot sequence ----------------
+  (async function boot() {
+    const hasShared = applyHashAnnotationsIfAny();
+    if (!hasShared) loadLocal();
 
-  const loadingTask = pdfjsLib.getDocument(PDF_URL);
-  state.pdf = await loadingTask.promise;
+    const task = pdfjsLib.getDocument(PDF_URL);
+    state.pdf = await task.promise;
 
-  await renderPage();
-})();
+    await renderPage();
+  })().catch(err => {
+    console.error("Failed to initialize viewer:", err);
+  });
+}
