@@ -1,7 +1,10 @@
 // PDF.js v3 UMD is loaded globally as window.pdfjsLib from index.html.
+// LZString is loaded globally from CDN (for share-link compression).
 
 // Configuration
 const PDF_URL = "./docs/project.pdf";
+const LOCAL_KEY = "eplan_ann_v2"; // localStorage key
+const HASH_KEY = "ann";           // URL hash key
 
 // State
 const state = {
@@ -11,11 +14,12 @@ const state = {
   minScale: 0.4,
   maxScale: 3.0,
   tool: null, // "pen-red" | "pen-green" | "rect-red" | "rect-green" | "text" | null
-  strokes: {}, // { "page:1": [ {type, color, path or rect or text}, ... ] }
+  strokes: {}, // { "page:1": [ {type, color, path|rect|text}, ... ] }
   drawing: false,
   currentPath: [],
   startPt: null,
-  pan: { active: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 }
+  pan: { active: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 },
+  sharedMode: false // true when annotations are driven by URL hash
 };
 
 // Elements
@@ -39,8 +43,9 @@ const saveBtn = document.getElementById("save");
 const loadBtn = document.getElementById("load");
 const exportJsonBtn = document.getElementById("exportJson");
 const importJsonInput = document.getElementById("importJson");
+const shareBtn = document.getElementById("shareLink");
 
-// Helpers
+// ---------- Helpers ----------
 function key() { return `page:${state.page}`; }
 function updateZoomLabel() { zoomVal.textContent = `${Math.round(state.scale * 100)}%`; }
 function strokesForPage() { return state.strokes[key()] || []; }
@@ -51,16 +56,49 @@ function pushStroke(stroke) {
   setStrokesForPage(arr);
 }
 
+// Local persistence (fallback)
 function loadLocal() {
   try {
-    const raw = localStorage.getItem("eplan_ann_v2");
-    if (raw) state.strokes = JSON.parse(raw);
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (raw) state.strokes = JSON.parse(raw) || {};
   } catch (_) {}
 }
 function saveLocal() {
-  localStorage.setItem("eplan_ann_v2", JSON.stringify(state.strokes));
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(state.strokes));
+  } catch (_) {}
 }
 
+// URL-hash share (no backend)
+function encodeAnnotationsToHash(obj) {
+  const json = JSON.stringify(obj);
+  const compressed = LZString.compressToEncodedURIComponent(json);
+  return `#${HASH_KEY}=${compressed}`;
+}
+function decodeAnnotationsFromHash() {
+  const m = location.hash.match(new RegExp(`#${HASH_KEY}=([^&]+)`));
+  if (!m) return null;
+  try {
+    const json = LZString.decompressFromEncodedURIComponent(m[1]);
+    if (!json) return null;
+    const data = JSON.parse(json);
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
+  }
+}
+function applyHashAnnotationsIfAny() {
+  const data = decodeAnnotationsFromHash();
+  if (data) {
+    state.strokes = data;
+    state.sharedMode = true; // indicate we are showing shared data
+    return true;
+  }
+  state.sharedMode = false;
+  return false;
+}
+
+// Drawing and rendering
 function drawAllAnnotations() {
   annCtx.clearRect(0, 0, annCanvas.width, annCanvas.height);
   const arr = strokesForPage();
@@ -87,7 +125,6 @@ function drawAllAnnotations() {
     }
   }
 }
-
 function toCanvasPoint(evt) {
   const rect = annCanvas.getBoundingClientRect();
   const x = (evt.clientX - rect.left) * (annCanvas.width / rect.width);
@@ -110,7 +147,7 @@ async function renderPage() {
   drawAllAnnotations();
 }
 
-// UI events
+// ---------- UI wiring ----------
 zoomInBtn.addEventListener("click", () => {
   state.scale = Math.min(state.scale + 0.1, state.maxScale);
   updateZoomLabel();
@@ -150,6 +187,7 @@ annCanvas.addEventListener("pointerdown", (e) => {
   if (!state.tool) return;
   state.drawing = true;
   const [x, y] = toCanvasPoint(e);
+
   if (state.tool.startsWith("pen")) {
     state.currentPath = [[x, y]];
   } else if (state.tool.startsWith("rect")) {
@@ -157,10 +195,9 @@ annCanvas.addEventListener("pointerdown", (e) => {
   } else if (state.tool === "text") {
     const value = prompt("Enter note text:");
     if (value && value.trim()) {
-      const color = "text-red" in state ? "#ff0000" : "#ffcc00"; // default yellow
       pushStroke({ type: "text", color: "#ffcc00", x, y, value: value.trim() });
       drawAllAnnotations();
-      saveLocal();
+      if (!state.sharedMode) saveLocal();
     }
   }
   e.preventDefault();
@@ -182,7 +219,7 @@ annCanvas.addEventListener("pointermove", (e) => {
     annCtx.lineCap = "round";
     annCtx.stroke();
   } else if (state.tool.startsWith("rect")) {
-    // Draw live preview
+    // Live preview
     drawAllAnnotations();
     const [sx, sy] = state.startPt;
     const w = x - sx;
@@ -210,7 +247,7 @@ annCanvas.addEventListener("pointerup", (e) => {
     state.startPt = null;
   }
   drawAllAnnotations();
-  saveLocal();
+  if (!state.sharedMode) saveLocal();
 });
 
 // Pan by dragging blank area (use wrapper to scroll)
@@ -239,15 +276,33 @@ undoBtn.addEventListener("click", () => {
   arr.pop();
   setStrokesForPage(arr);
   drawAllAnnotations();
-  saveLocal();
+  if (!state.sharedMode) saveLocal();
 });
+
 clearBtn.addEventListener("click", () => {
   setStrokesForPage([]);
   drawAllAnnotations();
-  saveLocal();
+  if (!state.sharedMode) saveLocal();
 });
-saveBtn.addEventListener("click", saveLocal);
-loadBtn.addEventListener("click", () => { loadLocal(); drawAllAnnotations(); });
+
+saveBtn.addEventListener("click", () => {
+  if (state.sharedMode) {
+    alert("You are viewing a shared link. Edit and press Share link to create a new shared URL.");
+  } else {
+    saveLocal();
+    alert("Saved locally on this device.");
+  }
+});
+
+loadBtn.addEventListener("click", () => {
+  if (state.sharedMode) {
+    alert("Shared link is already loaded from the URL.");
+  } else {
+    loadLocal();
+    drawAllAnnotations();
+    alert("Loaded local annotations.");
+  }
+});
 
 exportJsonBtn.addEventListener("click", () => {
   const blob = new Blob([JSON.stringify(state.strokes, null, 2)], { type: "application/json" });
@@ -268,7 +323,7 @@ importJsonInput.addEventListener("change", async () => {
     if (data && typeof data === "object") {
       state.strokes = data;
       drawAllAnnotations();
-      saveLocal();
+      if (!state.sharedMode) saveLocal();
     }
   } catch (e) {
     console.error("Invalid JSON:", e);
@@ -277,10 +332,40 @@ importJsonInput.addEventListener("change", async () => {
   }
 });
 
+// Share link
+if (shareBtn) {
+  shareBtn.addEventListener("click", () => {
+    const hash = encodeAnnotationsToHash(state.strokes);
+    const url = `${location.origin}${location.pathname}${hash}`;
+    navigator.clipboard?.writeText(url).catch(() => {});
+    alert("Share this URL:\n\n" + url);
+  });
+}
+
+// React to hash changes (e.g., when user pastes a new hash and hits enter)
+window.addEventListener("hashchange", () => {
+  const wasShared = state.sharedMode;
+  if (applyHashAnnotationsIfAny()) {
+    drawAllAnnotations();
+    if (!wasShared) {
+      alert("Loaded shared annotations from URL.");
+    }
+  } else if (wasShared) {
+    // If hash cleared, fall back to local
+    loadLocal();
+    state.sharedMode = false;
+    drawAllAnnotations();
+  }
+});
+
 // Boot
 (async function boot() {
-  loadLocal();
+  // Prefer shared link if present
+  const hasShared = applyHashAnnotationsIfAny();
+  if (!hasShared) loadLocal();
+
   const loadingTask = pdfjsLib.getDocument(PDF_URL);
   state.pdf = await loadingTask.promise;
+
   await renderPage();
 })();
