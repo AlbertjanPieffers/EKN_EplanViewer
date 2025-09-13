@@ -1,72 +1,42 @@
-// No libraries required. Drives the native PDF viewer via URL fragments.
+// viewer.js (for native iframe viewer only)
+document.addEventListener("DOMContentLoaded", () => {
+  const PDF_PATH = "./docs/project.pdf";
 
-// Path to your PDF (must be same-origin on your static host).
-const PDF_PATH = "./docs/project.pdf";
+  const pdfFrame = document.getElementById("pdfFrame");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const zoomInBtn = document.getElementById("zoomIn");
+  const zoomOutBtn = document.getElementById("zoomOut");
+  const zoomVal = document.getElementById("zoomVal");
+  const pageInput = document.getElementById("pageInput");
+  const openNewTab = document.getElementById("openNewTab");
 
-// Some browsers (Chromium-family) honor #page and #zoom fragments.
-const state = {
-  page: 1,
-  zoomPercent: 100,  // accepted: e.g. 50, 100, 150; browser may approximate
-};
+  if (!pdfFrame) {
+    console.error("Missing element: #pdfFrame. Check your index.html.");
+    return;
+  }
 
-const pdfFrame = document.getElementById("pdfFrame");
-const prevBtn = document.getElementById("prevBtn");
-const nextBtn = document.getElementById("nextBtn");
-const zoomInBtn = document.getElementById("zoomIn");
-const zoomOutBtn = document.getElementById("zoomOut");
-const zoomVal = document.getElementById("zoomVal");
-const pageInput = document.getElementById("pageInput");
-const openNewTab = document.getElementById("openNewTab");
+  const state = { page: 1, zoomPercent: 100 };
 
-function buildPdfUrl() {
-  // Use percentage zoom (works in Chromium). Alternatives some browsers accept: "page-width", "page-fit".
-  const zoom = state.zoomPercent; // integer
-  return `${PDF_PATH}#page=${state.page}&zoom=${zoom}`;
-}
-
-function loadFrame() {
-  pdfFrame.src = buildPdfUrl();
-  zoomVal.textContent = `${state.zoomPercent}%`;
-  pageInput.value = String(state.page);
-}
-
-function clamp(val, min, max) {
-  return Math.max(min, Math.min(max, val));
-}
-
-prevBtn.addEventListener("click", () => {
-  state.page = clamp(state.page - 1, 1, 9999);
-  loadFrame();
-});
-
-nextBtn.addEventListener("click", () => {
-  state.page = clamp(state.page + 1, 1, 9999);
-  loadFrame();
-});
-
-zoomInBtn.addEventListener("click", () => {
-  state.zoomPercent = clamp(state.zoomPercent + 10, 10, 500);
-  loadFrame();
-});
-
-zoomOutBtn.addEventListener("click", () => {
-  state.zoomPercent = clamp(state.zoomPercent - 10, 10, 500);
-  loadFrame();
-});
-
-pageInput.addEventListener("change", () => {
-  const n = parseInt(pageInput.value, 10);
-  if (Number.isFinite(n) && n > 0) {
-    state.page = n;
-    loadFrame();
-  } else {
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function buildUrl() { return `${PDF_PATH}#page=${state.page}&zoom=${state.zoomPercent}`; }
+  function loadFrame() {
+    pdfFrame.src = buildUrl();
+    zoomVal.textContent = `${state.zoomPercent}%`;
     pageInput.value = String(state.page);
   }
-});
 
-openNewTab.addEventListener("click", () => {
-  window.open(buildPdfUrl(), "_blank", "noopener,noreferrer");
-});
+  prevBtn?.addEventListener("click", () => { state.page = clamp(state.page - 1, 1, 9999); loadFrame(); });
+  nextBtn?.addEventListener("click", () => { state.page = clamp(state.page + 1, 1, 9999); loadFrame(); });
+  zoomInBtn?.addEventListener("click", () => { state.zoomPercent = clamp(state.zoomPercent + 10, 10, 500); loadFrame(); });
+  zoomOutBtn?.addEventListener("click", () => { state.zoomPercent = clamp(state.zoomPercent - 10, 10, 500); loadFrame(); });
+  pageInput?.addEventListener("change", () => {
+    const n = parseInt(pageInput.value, 10);
+    state.page = Number.isFinite(n) && n > 0 ? n : state.page;
+    pageInput.value = String(state.page);
+    loadFrame();
+  });
+  openNewTab?.addEventListener("click", () => window.open(buildUrl(), "_blank", "noopener,noreferrer"));
 
-// Initial load
-loadFrame();
+  loadFrame();
+});
