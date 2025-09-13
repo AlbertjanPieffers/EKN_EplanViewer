@@ -5,19 +5,7 @@
   <title>EPLAN Web Viewer (PDF)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./viewer.css" />
-
-  <!-- Load PDF.js v4 as ES modules (cdnjs publishes .mjs, not .js for v4) -->
-  <script type="module">
-    import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.mjs";
-    // Worker must match the exact version and be the .mjs variant as well
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.mjs";
-
-    // Expose for non-module viewer.js which expects window.pdfjsLib
-    window.pdfjsLib = pdfjsLib;
-  </script>
 </head>
-
 <body>
   <div class="app">
     <aside class="sidebar">
@@ -50,14 +38,7 @@
     </main>
   </div>
 
-  <!-- Safety net: if the module failed to load, don't run the viewer -->
-  <script>
-    if (!window.pdfjsLib) {
-      console.error("[Viewer] pdfjsLib is undefined. Check network/CDN and serve via http(s) rather than file://");
-    }
-  </script>
-
-  <!-- Your existing non-module viewer that uses window.pdfjsLib -->
-  <script src="./viewer.js"></script>
+  <!-- Load your viewer as an ES module -->
+  <script type="module" src="./viewer.js"></script>
 </body>
 </html>
