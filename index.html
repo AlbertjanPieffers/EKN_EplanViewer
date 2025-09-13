@@ -14,6 +14,8 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.worker.min.js";
   </script>
+  <!-- Put this <script> in <head> or just before </body> -->
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -49,6 +51,7 @@
             <div class="label">Actions</div>
             <button id="undo" type="button">Undo</button>
             <button id="clear" type="button">Clear page</button>
+            <button id="shareLink" type="button">Share link</button>
             <button id="save" type="button">Save</button>
             <button id="load" type="button">Load</button>
             <button id="exportJson" type="button">Export JSON</button>
@@ -77,4 +80,5 @@
   <script src="./viewer.js"></script>
 </body>
 </html>
+
 
