@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8" />
-  <title>Eklund EPLAN Web Viewer </title>
+  <title>EPLAN Web Viewer (Red/Greenlining)</title>
   <link rel="icon" type="image/x-icon" href="./images/favicon.ico">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./viewer.css" />
@@ -15,14 +15,20 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.worker.min.js";
   </script>
-  <!-- Put this <script> in <head> or just before </body> -->
-<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+
+  <!-- LZ-String for share links -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
-      <div class="controls">
 
+    <!-- Collapsible sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <button id="sidebarCollapse" type="button" aria-label="Close tools">Close</button>
+      </div>
+
+      <div class="controls">
         <!-- Page navigation -->
         <div class="nav">
           <button id="prevPage" type="button">Prev</button>
@@ -64,26 +70,23 @@
         </div>
 
         <div class="hint">
-          Tip: Hold left mouse on blank area to pan. Press Escape to exit tools.
+          Tip: Drag to pan. Press Escape to exit tools.
         </div>
       </div>
     </aside>
 
-    <!-- Viewer canvas area -->
+    <!-- Main canvas area -->
     <main class="viewer">
       <div id="canvasWrap" class="canvas-wrap">
         <canvas id="pdfCanvas"></canvas>
         <canvas id="annCanvas"></canvas>
       </div>
     </main>
+
+    <!-- Floating open button (only shown on small screens) -->
+    <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Open tools">Tools</button>
   </div>
 
   <script src="./viewer.js"></script>
 </body>
 </html>
-
-
-
-
-
-
