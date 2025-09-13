@@ -1,4 +1,4 @@
-# EPLAN Web Viewer
+# EKLUND Engineering EPLAN Web Viewer
 
 A lightweight, self-hosted PDF viewer with red/greenlining annotations, designed for viewing **EPLAN schematics** and similar technical PDFs directly in the browser.  
 The viewer runs fully client-side (no server needed) and can be hosted on **GitHub Pages** or any static web host.
@@ -41,8 +41,8 @@ The viewer runs fully client-side (no server needed) and can be hosted on **GitH
 
 ### 1. Clone or download this repo
 ```bash
-git clone https://github.com/<your-username>/eplan-web-viewer.git
-cd eplan-web-viewer
+git clone https://github.com/AlbertjanPieffers/EKN_EplanViewer.git
+cd EKN_EplanViewer
 ```
 
 ### 2. Add your PDF files
