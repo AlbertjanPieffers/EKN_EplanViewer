@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <title>EPLAN Web Viewer (PDF)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./viewer.css" />
+
+  <!-- Load PDF.js v4 as ES modules (cdnjs publishes .mjs, not .js for v4) -->
+  <script type="module">
+    import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.mjs";
+    // Worker must match the exact version and be the .mjs variant as well
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.mjs";
+
+    // Expose for non-module viewer.js which expects window.pdfjsLib
+    window.pdfjsLib = pdfjsLib;
+  </script>
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="controls">
+        <input id="searchInput" type="search" placeholder="Search text..." />
+        <button id="searchBtn" type="button">Search</button>
+        <div class="zoom">
+          <button id="zoomOut" type="button">-</button>
+          <span id="zoomVal">100%</span>
+          <button id="zoomIn" type="button">+</button>
+        </div>
+        <div class="nav">
+          <button id="prevPage" type="button">Prev</button>
+          <span id="pageInfo">1 / ?</span>
+          <button id="nextPage" type="button">Next</button>
+        </div>
+        <div class="annotate">
+          <label><input id="toggleAnnotate" type="checkbox" /> Annotate</label>
+          <button id="clearAnn" type="button">Clear page annotations</button>
+        </div>
+      </div>
+      <div id="thumbs" class="thumbs"></div>
+    </aside>
+
+    <main class="viewer">
+      <div id="canvasHost" class="canvas-host">
+        <canvas id="pdfCanvas"></canvas>
+        <canvas id="annCanvas"></canvas>
+      </div>
+    </main>
+  </div>
+
+  <!-- Safety net: if the module failed to load, don't run the viewer -->
+  <script>
+    if (!window.pdfjsLib) {
+      console.error("[Viewer] pdfjsLib is undefined. Check network/CDN and serve via http(s) rather than file://");
+    }
+  </script>
+
+  <!-- Your existing non-module viewer that uses window.pdfjsLib -->
+  <script src="./viewer.js"></script>
+</body>
+</html>

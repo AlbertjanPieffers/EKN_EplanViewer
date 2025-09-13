@@ -1,0 +1,8 @@
+{
+  "project": "Demo EPLAN Project",
+  "pages": [
+    { "page": 1, "title": "010 - Main supply" },
+    { "page": 2, "title": "020 - PLC overview" },
+    { "page": 3, "title": "030 - I/O allocation" }
+  ]
+}
