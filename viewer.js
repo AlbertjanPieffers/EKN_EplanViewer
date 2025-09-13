@@ -1,8 +1,9 @@
-// Robust multi-CDN loader for PDF.js v4 (ESM). viewer.js must be loaded with type="module".
+// viewer.js must be loaded with type="module" in index.html
+
+// 1) Load PDF.js (ESM) first and only proceed when it is ready.
 const PDFJS_VERSION = "4.2.67";
 
 async function loadPdfJs() {
-  // Try multiple CDNs in order. All are ESM (.mjs) builds for v4.
   const sources = [
     {
       lib: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`,
@@ -21,30 +22,19 @@ async function loadPdfJs() {
   for (const src of sources) {
     try {
       const mod = await import(src.lib);
-      // Sanity check that we actually got PDF.js
       if (!mod || typeof mod.getDocument !== "function") continue;
-
-      // Set worker to the matching .mjs file
       mod.GlobalWorkerOptions.workerSrc = src.worker;
-
-      // Expose globally only if you still have code expecting it
-      window.pdfjsLib = mod;
-      return mod;
-    } catch (err) {
-      // Try next CDN
-      console.warn(`PDF.js load failed from ${src.lib}:`, err);
+      return mod; // This is the PDF.js API module
+    } catch (_) {
+      // try next CDN
     }
   }
-  throw new Error("Failed to load PDF.js from all CDNs. Check your network/CSP and ensure https hosting (not file://).");
+  throw new Error("PDF.js failed to load from all CDNs. Serve over http(s), not file://");
 }
 
-// Top-level await is allowed because viewer.js is a module.
-const pdfjsLib = await loadPdfJs();
+const PDF = await loadPdfJs(); // <— this is your PDF.js API (not a global)
 
-
-
-// Basic PDF viewer with thumbnails, zoom, paging, simple text search and annotation overlay.
-
+// 2) The rest of your viewer code (unchanged), but use `PDF` instead of a global.
 const PDF_URL = "./docs/project.pdf";
 
 const state = {
@@ -100,15 +90,9 @@ async function renderPage() {
   annCanvas.width = pdfCanvas.width;
   annCanvas.height = pdfCanvas.height;
 
-  // Render PDF
-  await page.render({
-    canvasContext: pdfCtx,
-    viewport
-  }).promise;
+  await page.render({ canvasContext: pdfCtx, viewport }).promise;
 
   pageInfo.textContent = `${state.page} / ${state.pdf.numPages}`;
-
-  // Render existing annotations
   drawAnnotations();
 }
 
@@ -141,7 +125,6 @@ async function buildThumbnails(pdf) {
     c.width = Math.floor(viewport.width);
     c.height = Math.floor(viewport.height);
     const ctx = c.getContext("2d");
-
     await page.render({ canvasContext: ctx, viewport }).promise;
 
     const wrap = document.createElement("div");
@@ -160,12 +143,9 @@ async function buildThumbnails(pdf) {
 }
 
 async function doSearch() {
-  // Simple on-page text search: highlight matches by scrolling to first match (basic demo).
-  // For robust search across all pages, consider building a text index by walking all pages.
   const q = searchInput.value.trim();
   if (!q) return;
 
-  // Try to find next page containing the query (basic loop)
   let start = state.page;
   for (let i = 0; i < state.pdf.numPages; i++) {
     const pageNum = ((start - 1 + i) % state.pdf.numPages) + 1;
@@ -244,7 +224,7 @@ function initUI() {
     renderPage();
   });
 
-  zoomOutBtn.addEventListener("click", () => {
+  zoomOutBtn addEventListener("click", () => {
     state.scale = Math.max(state.scale - 0.1, state.minScale);
     updateZoomLabel();
     renderPage();
@@ -271,7 +251,7 @@ function initUI() {
     drawAnnotations();
   });
 
-  // Basic drag-to-pan on the main host (for large pages)
+  // Drag-to-pan on the main host
   let panning = false;
   let startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0;
   const scroller = document.querySelector(".viewer");
@@ -290,16 +270,21 @@ function initUI() {
     scroller.scrollLeft = scrollLeft - (e.clientX - startX);
     scroller.scrollTop = scrollTop - (e.clientY - startY);
   });
+
   window.addEventListener("mouseup", () => { panning = false; });
 }
 
 async function boot() {
+  if (!PDF || typeof PDF.getDocument !== "function") {
+    throw new Error("PDF.js API is not available");
+  }
+
   loadAnnotations();
   updateZoomLabel();
   initUI();
   attachAnnotationEvents();
 
-  const pdf = await pdfjsLib.getDocument(PDF_URL).promise;
+  const pdf = await PDF.getDocument(PDF_URL).promise;
   state.pdf = pdf;
 
   await buildThumbnails(pdf);
@@ -309,5 +294,3 @@ async function boot() {
 boot().catch(err => {
   console.error("Failed to initialize viewer:", err);
 });
-
-
