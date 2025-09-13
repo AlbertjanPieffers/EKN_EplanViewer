@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8" />
-  <title>EPLAN Web Viewer (PDF)</title>
+  <title>EPLAN Web Viewer (Native PDF)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./viewer.css" />
 </head>
@@ -10,35 +10,32 @@
   <div class="app">
     <aside class="sidebar">
       <div class="controls">
-        <input id="searchInput" type="search" placeholder="Search text..." />
-        <button id="searchBtn" type="button">Search</button>
+        <input id="pageInput" type="number" min="1" value="1" />
+        <button id="prevBtn" type="button">Prev</button>
+        <button id="nextBtn" type="button">Next</button>
+
         <div class="zoom">
           <button id="zoomOut" type="button">-</button>
           <span id="zoomVal">100%</span>
           <button id="zoomIn" type="button">+</button>
         </div>
-        <div class="nav">
-          <button id="prevPage" type="button">Prev</button>
-          <span id="pageInfo">1 / ?</span>
-          <button id="nextPage" type="button">Next</button>
-        </div>
-        <div class="annotate">
-          <label><input id="toggleAnnotate" type="checkbox" /> Annotate</label>
-          <button id="clearAnn" type="button">Clear page annotations</button>
+
+        <div class="actions">
+          <button id="openNewTab" type="button">Open in new tab</button>
+          <p style="margin:8px 0 0; font-size:12px; opacity:.7;">
+            Tip: use Ctrl+F for text search inside the PDF.
+          </p>
         </div>
       </div>
-      <div id="thumbs" class="thumbs"></div>
     </aside>
 
     <main class="viewer">
-      <div id="canvasHost" class="canvas-host">
-        <canvas id="pdfCanvas"></canvas>
-        <canvas id="annCanvas"></canvas>
+      <div class="iframe-wrap">
+        <iframe id="pdfFrame" title="EPLAN PDF" loading="eager"></iframe>
       </div>
     </main>
   </div>
 
-  <!-- Load your viewer as an ES module -->
   <script type="module" src="./viewer.js"></script>
 </body>
 </html>
