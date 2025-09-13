@@ -2,17 +2,29 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8" />
-  <title>EPLAN Web Viewer (Native PDF)</title>
+  <title>EPLAN Web Viewer (Red/Greenlining)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./viewer.css" />
+
+  <!-- PDF.js v3 UMD build (stable on cdnjs) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.min.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    // Set the v3 worker (must match the version)
+    window.pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.worker.min.js";
+  </script>
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="controls">
-        <input id="pageInput" type="number" min="1" value="1" />
-        <button id="prevBtn" type="button">Prev</button>
-        <button id="nextBtn" type="button">Next</button>
+        <div class="nav">
+          <button id="prevPage" type="button">Prev</button>
+          <span id="pageInfo">1 / ?</span>
+          <button id="nextPage" type="button">Next</button>
+        </div>
 
         <div class="zoom">
           <button id="zoomOut" type="button">-</button>
@@ -20,22 +32,44 @@
           <button id="zoomIn" type="button">+</button>
         </div>
 
-        <div class="actions">
-          <button id="openNewTab" type="button">Open in new tab</button>
-          <p style="margin:8px 0 0; font-size:12px; opacity:.7;">
-            Tip: use Ctrl+F for text search inside the PDF.
-          </p>
+        <div class="tools">
+          <div class="group">
+            <div class="label">Markup</div>
+            <button data-tool="pen-red" type="button">Pen Red</button>
+            <button data-tool="pen-green" type="button">Pen Green</button>
+            <button data-tool="rect-red" type="button">Rect Red</button>
+            <button data-tool="rect-green" type="button">Rect Green</button>
+            <button data-tool="text" type="button">Text</button>
+          </div>
+
+          <div class="group">
+            <div class="label">Actions</div>
+            <button id="undo" type="button">Undo</button>
+            <button id="clear" type="button">Clear page</button>
+            <button id="save" type="button">Save</button>
+            <button id="load" type="button">Load</button>
+            <button id="exportJson" type="button">Export JSON</button>
+            <label class="file">
+              Import JSON
+              <input id="importJson" type="file" accept="application/json" />
+            </label>
+          </div>
+        </div>
+
+        <div class="hint">
+          Tip: Hold left mouse on blank area to pan. Switch off tools by pressing Escape.
         </div>
       </div>
     </aside>
 
     <main class="viewer">
-      <div class="iframe-wrap">
-        <iframe id="pdfFrame" title="EPLAN PDF" loading="eager"></iframe>
+      <div id="canvasWrap" class="canvas-wrap">
+        <canvas id="pdfCanvas"></canvas>
+        <canvas id="annCanvas"></canvas>
       </div>
     </main>
   </div>
 
-  <script type="module" src="./viewer.js"></script>
+  <script src="./viewer.js"></script>
 </body>
 </html>
