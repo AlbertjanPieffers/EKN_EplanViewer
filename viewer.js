@@ -1,10 +1,46 @@
-// Import PDF.js as an ES module (v4 uses .mjs). Keep versions in both URLs identical.
-import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.min.mjs";
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.worker.min.mjs";
+// Robust multi-CDN loader for PDF.js v4 (ESM). viewer.js must be loaded with type="module".
+const PDFJS_VERSION = "4.2.67";
 
-// If the rest of your code expects a global, keep this line:
-window.pdfjsLib = pdfjsLib;
+async function loadPdfJs() {
+  // Try multiple CDNs in order. All are ESM (.mjs) builds for v4.
+  const sources = [
+    {
+      lib: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`,
+      worker: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`
+    },
+    {
+      lib: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`,
+      worker: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`
+    },
+    {
+      lib: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`,
+      worker: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`
+    }
+  ];
+
+  for (const src of sources) {
+    try {
+      const mod = await import(src.lib);
+      // Sanity check that we actually got PDF.js
+      if (!mod || typeof mod.getDocument !== "function") continue;
+
+      // Set worker to the matching .mjs file
+      mod.GlobalWorkerOptions.workerSrc = src.worker;
+
+      // Expose globally only if you still have code expecting it
+      window.pdfjsLib = mod;
+      return mod;
+    } catch (err) {
+      // Try next CDN
+      console.warn(`PDF.js load failed from ${src.lib}:`, err);
+    }
+  }
+  throw new Error("Failed to load PDF.js from all CDNs. Check your network/CSP and ensure https hosting (not file://).");
+}
+
+// Top-level await is allowed because viewer.js is a module.
+const pdfjsLib = await loadPdfJs();
+
 
 
 // Basic PDF viewer with thumbnails, zoom, paging, simple text search and annotation overlay.
@@ -273,4 +309,5 @@ async function boot() {
 boot().catch(err => {
   console.error("Failed to initialize viewer:", err);
 });
+
 
