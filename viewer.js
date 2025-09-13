@@ -1,3 +1,12 @@
+// Import PDF.js as an ES module (v4 uses .mjs). Keep versions in both URLs identical.
+import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.min.mjs";
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.worker.min.mjs";
+
+// If the rest of your code expects a global, keep this line:
+window.pdfjsLib = pdfjsLib;
+
+
 // Basic PDF viewer with thumbnails, zoom, paging, simple text search and annotation overlay.
 
 const PDF_URL = "./docs/project.pdf";
@@ -264,3 +273,4 @@ async function boot() {
 boot().catch(err => {
   console.error("Failed to initialize viewer:", err);
 });
+
