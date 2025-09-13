@@ -10,7 +10,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.min.js"
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
-    // Set the v3 worker (must match the version)
     window.pdfjsLib = window['pdfjs-dist/build/pdf'];
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.worker.min.js";
@@ -20,18 +19,22 @@
   <div class="app">
     <aside class="sidebar">
       <div class="controls">
+
+        <!-- Page navigation -->
         <div class="nav">
           <button id="prevPage" type="button">Prev</button>
           <span id="pageInfo">1 / ?</span>
           <button id="nextPage" type="button">Next</button>
         </div>
 
+        <!-- Zoom controls -->
         <div class="zoom">
           <button id="zoomOut" type="button">-</button>
           <span id="zoomVal">100%</span>
           <button id="zoomIn" type="button">+</button>
         </div>
 
+        <!-- Markup tools -->
         <div class="tools">
           <div class="group">
             <div class="label">Markup</div>
@@ -57,11 +60,12 @@
         </div>
 
         <div class="hint">
-          Tip: Hold left mouse on blank area to pan. Switch off tools by pressing Escape.
+          Tip: Hold left mouse on blank area to pan. Press Escape to exit tools.
         </div>
       </div>
     </aside>
 
+    <!-- Viewer canvas area -->
     <main class="viewer">
       <div id="canvasWrap" class="canvas-wrap">
         <canvas id="pdfCanvas"></canvas>
